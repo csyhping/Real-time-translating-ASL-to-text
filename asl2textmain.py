@@ -6,74 +6,80 @@ This is main program of ASL2TEXT including hand detection, real-time computer vi
 Latest updated on Oct. 11, 2018 
 '''
 
-import string
-import cv2
-from cv2 import imread
 from keras.models import load_model
-import time
 from preprocessing import squarePadding, preProcessForNN
+from cv2 import imread
+
 import numpy as np 
 import copy
 import math
+import string
+import cv2
+import time
 
-# parameter settings
-# region of interest
+
+# parameter settings for ROI(region of interest)
 roi_x = 0.55 
 roi_y = 0.9
+
+# parameter settings
 threshold = 65 
 blur = 9 # gaussian blur
-bg_threshold = 50
-learningRate = 0
+bg_threshold = 50 # background threshold value
+learningRate = 0 # learning rate for MOG2
 
-bg_extraction = 0 #backgroun extraction or not
+bg_extraction = 0 # backgroun subtracion or not
 checkFinger = False # check fingers
 
-# background extraction
+# background subtraction
 def removeBG(frame):
-    fgmask = bgModel.apply(frame,learningRate=learningRate)
-    # kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    # res = cv2.morphologyEx(fgmask, cv2.MORPH_OPEN, kernel)
-
+    backgroundMask = bgModel.apply(frame,learningRate=learningRate)
     kernel = np.ones((3, 3), np.uint8)
-    fgmask = cv2.erode(fgmask, kernel, iterations=1)
-    res = cv2.bitwise_and(frame, frame, mask=fgmask)
+    backgroundMask = cv2.erode(backgroundMask, kernel, iterations=1)
+    subtractedFrame = cv2.bitwise_and(frame, frame, mask=backgroundMask)
     isBgExtraction = 1
-    return res
+    return subtractedFrame
 
-# hand detection based on convexity defects
-def handDetection(contour, drawing):
-    #use algorithm: convexity defect and convexity hull
-    #calculate the epsilon and draw the approx curve of contour
-    #then us angle to judge if there is any finger
-    # epsilon = 0.01 * cv2.arcLength(contour, True)
-    # contour = cv2.approxPolyDP(contour, epsilon, True)
-    #check the points where convexity defect happens
-    hull = cv2.convexHull(contour, returnPoints = False)
-    if len(hull) > 2:
-        cvxDef = cv2.convexityDefects(contour, hull)
+# hand detection
+def handDetection(contour, cvxWindow):
+    # hand detection by calculating the convexy hull and convexity defects
+    cvxHull = cv2.convexHull(contour, returnPoints = False)
+    if len(cvxHull) > 2:
+        cvxDef = cv2.convexityDefects(contour, cvxHull)
         if type(cvxDef) != type(None):
             count = 0
             for i in range(cvxDef.shape[0]):
                 start_of_cvxDef, end_of_cvxDef, far_of_cvxDef, depth_of_cvxDef = cvxDef[i][0]
-                start = tuple(contour[start_of_cvxDef][0])
-                end = tuple(contour[end_of_cvxDef][0])
-                far = tuple(contour[far_of_cvxDef][0])
-                #calculate the cosine of the angle to define if it is a finger
-                #v1, v2, v3 are the verticles of the defect area
-                v1 = math.sqrt((end[0] - start[0]) ** 2 + (end[1] - start[1]) ** 2)
-                v2 = math.sqrt((far[0] - start[0]) ** 2 + (far[1] - start[1]) ** 2)
-                v3 = math.sqrt((end[0] - far[0]) ** 2 + (end[1] - far[1]) ** 2)
-                angle = math.acos((v2 ** 2 + v3 ** 2 - v1 ** 2) / (2 * v2 * v3))
-                if angle < math.pi / 2:
-                    #if angle less than 90, regard as a finger
-                    count += 1
-                    #cv2.line(img, start, end, (0, 255, 0), 2) #draw a line
-                    cv2.circle(drawing, far, 6, (255, 0, 0), -1) #draw a dot(circle) as verticle
-            return True, count # return if find finger and its number
-        return False, 0 # find no finger
+                # the start point, end point and deepest point forms a triangle, if the bottom angle is less than
+                # 90 degrees, there are two fingers alongside
+                startPoint = tuple(contour[start_of_cvxDef][0])
+                endPoint = tuple(contour[end_of_cvxDef][0])
+                deepestPoint = tuple(contour[far_of_cvxDef][0])
 
-# load pretrained model
-model = load_model('Model/my_model.h5')
+                v1 = math.sqrt((endPoint[0] - startPoint[0]) ** 2 + (endPoint[1] - startPoint[1]) ** 2)
+                v2 = math.sqrt((deepestPoint[0] - startPoint[0]) ** 2 + (deepestPoint[1] - startPoint[1]) ** 2)
+                v3 = math.sqrt((endPoint[0] - deepestPoint[0]) ** 2 + (endPoint[1] - deepestPoint[1]) ** 2)
+
+                angle = math.acos((v2 ** 2 + v3 ** 2 - v1 ** 2) / (2 * v2 * v3)) # calculate the consine value
+                if angle < math.pi / 2:
+                    #if bottom angle < 90, there is a finger alongside
+                    count += 1
+                    cv2.circle(cvxWindow, deepestPoint, 6, (255, 0, 0), -1) # draw bottom points
+            return True, count 
+        return False, 0 
+
+# Personalization of which model to use 
+modelname = input('Please specify the model to use, vgg16/mobilenet/none for self-built model.')
+if modelname == 'vgg16':
+    print('You have selected the VGG16 based model.')
+    model = load_model('Model/vgg16model.h5')
+elif modelname == 'mobilenet':
+    print('You have selected the MobileNet based model.')
+    model = load_model('Model/mobmodel.h5')
+else:
+    print('You have selected the self-built model.')
+    model = load_model('Model/selfmodel.h5')
+
 
 # build the alphabet dictionary base on category of numbers
 alphabetDict = {pos : alphabet for pos, alphabet in enumerate (string.ascii_uppercase)}
@@ -121,7 +127,7 @@ while camera.isOpened():
 
         newThresImg = copy.deepcopy(thresImg)
         _, cnt, hierarchy = cv2.findContours(newThresImg, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        drawing = np.zeros(img.shape, np.uint8) # define the drawing
+        cvxWindow = np.zeros(img.shape, np.uint8) # define the window for showing convex hull and contour
         maxArea = -1
         length = len(cnt)
         if length > 0:
@@ -133,22 +139,27 @@ while camera.isOpened():
                     ci = i 
             maxCnt = cnt[ci] # find the largest contour area to get the largest contour which is the contour of hand
             
-            hull = cv2.convexHull(maxCnt)
-            drawing = np.zeros(img.shape, np.uint8) # define the drawing
+            cvxHull = cv2.convexHull(maxCnt)
             moment = cv2.moments(maxCnt)
             if moment['m00'] != 0:
-                #center coordinates, x = M10/M00, y = M01/M00
+                # center coordinates, x = M10/M00, y = M01/M00
                 center_x = int(moment['m10'] / moment['m00'])
                 center_y = int(moment['m01'] / moment['m00'])
                 center = (center_x, center_y)
-            #cv2.circle(img, center, 5, (0, 0, 255), 2)
-            cv2.drawContours(drawing, [maxCnt], 0, (0, 255, 0), 2)
-            cv2.drawContours(drawing, [hull], -1, (0, 0, 255), 3)
 
-        cv2.imshow('Output', drawing)
+            cv2.drawContours(cvxWindow, [maxCnt], 0, (0, 255, 0), 2)
+            cv2.drawContours(cvxWindow, [cvxHull], -1, (0, 0, 255), 3)
+
+            # if press 'c', call hand detection to check finger numbers
+            fingerFlag, fingerCount = handDetection(maxCnt, cvxWindow)
+            if checkFinger == True:
+                if fingerFlag == True:
+                    print('Finger numbers: ' + fingerCount)
+
+        cv2.imshow('Output', cvxWindow)
         img_convert_ndarray = np.array(newThresImg)
         # cv2.imshow('For NN', img_convert_ndarray)
-        hand = preProcessForNN(drawing)
+        hand = preProcessForNN(cvxWindow)
 
         # predictions by model
 
@@ -209,11 +220,11 @@ while camera.isOpened():
         checkFinger = True
         print('Finger checker is on. ')
     elif key == ord('p'):
-        # print the drawing
+        # print the cvxWindow
         h, w = img.shape[: 2]
         printImg = cv2.resize(img, (h, w), interpolation = cv2.INTER_CUBIC)
-        cv2.imwrite('Data/Output/drawing.jpg', drawing)
-        print('Drawing has been printed.')
+        cv2.imwrite('Data/Output/cvxWindow.jpg', cvxWindow)
+        print('cvxWindow has been printed.')
 
 
 # analysis FPS

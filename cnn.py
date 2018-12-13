@@ -23,13 +23,12 @@ epochs = 64
 batchsize = 16
 
 #check the dimention order of input image
-
 if K.image_data_format() == 'channel_first':
     inputShape = (3, height, width)
 else:
     inputShape = (height, width, 3)
 
-#model scratch
+# model construction
 model = Sequential()
 model.add(Conv2D(32, (3, 3), input_shape = inputShape))
 model.add(Activation('relu'))
@@ -47,12 +46,12 @@ model.add(Flatten())
 model.add(Dense(64))
 model.add(Activation('relu'))
 model.add(Dropout(0.5))
-model.add(Dense(24))
+model.add(Dense(24)) # no letter J and Z
 model.add(Activation('softmax'))
 
 model.summary() #print the model structure
 
-model.compile(loss = 'binary_crossentropy', optimizer = 'rmsprop', metrics = ['accuracy'])
+model.compile(loss = 'categorical_crossentropy', optimizer = 'rmsprop', metrics = ['accuracy'])
 
 #data augmentation
 trainingDA = ImageDataGenerator(rescale = 1. /255, shear_range = 0.2, zoom_range = 0.2, horizontal_flip = True)

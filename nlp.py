@@ -187,7 +187,7 @@ def sentiment_analysis(word_list):
                 
     return sentiment_enhanced_dict
 
-#f = open("img_class_output.txt","r")
+# f = open("img_class_output.txt","r")
 f = open('wordlist.txt', 'r')
 '''
 We still haven't acquired a dataset with images conisiting of paired facial expression and 
