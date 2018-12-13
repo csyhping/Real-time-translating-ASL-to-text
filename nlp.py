@@ -31,7 +31,7 @@ import matplotlib.pyplot as plt
 def words(text):
     return re.findall(r'\w+', text.lower())
 
-WORDS = Counter(words(open('big.txt').read()))
+WORDS = Counter(words(open('holmes.txt').read()))
 
 def P(word, N = sum(WORDS.values())):
     # probability of 'word'
@@ -187,7 +187,7 @@ def sentiment_analysis(word_list):
                 
     return sentiment_enhanced_dict
 
-# f = open("img_class_output.txt","r")
+# f = open("wordlist2.txt","r")
 f = open('wordlist.txt', 'r')
 '''
 We still haven't acquired a dataset with images conisiting of paired facial expression and 
